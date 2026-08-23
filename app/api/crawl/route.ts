@@ -1,5 +1,4 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { corsHeaders, corsJson, corsOptions } from "@/lib/cors"
 import { safeFetch, assertPublicUrl, UrlRejectedError } from "@/lib/crawl/ssrf"
 import { canonicalizeUrl, isCrawlableUrl, isSameSite, urlPriority } from "@/lib/crawl/url-utils"
 import {
@@ -53,15 +52,11 @@ function clampInt(value: unknown, min: number, max: number, fallback: number): n
   return Math.min(max, Math.max(min, Math.floor(n)))
 }
 
-function jsonError(request: NextRequest, message: string, status: number) {
-  return corsJson(request, { crawlStatus: "unavailable", error: message }, status)
+function jsonError(message: string, status: number) {
+  return NextResponse.json({ crawlStatus: "unavailable", error: message }, { status })
 }
 
 type QueueItem = { url: string; anchor: string; priority: number }
-
-export async function OPTIONS(request: NextRequest) {
-  return corsOptions(request)
-}
 
 export async function POST(request: NextRequest) {
   // 1. Parse + validate the request body.
@@ -69,7 +64,7 @@ export async function POST(request: NextRequest) {
   try {
     body = (await request.json()) as CrawlRequestBody
   } catch {
-    return jsonError(request, "Invalid JSON body.", 400)
+    return jsonError("Invalid JSON body.", 400)
   }
 
   const website = isNonEmptyString(body.website) ? body.website.trim() : null
@@ -83,7 +78,7 @@ export async function POST(request: NextRequest) {
   if (!service) missing.push("service")
   if (!location) missing.push("location")
   if (missing.length > 0) {
-    return jsonError(request, `Missing or invalid required field(s): ${missing.join(", ")}.`, 400)
+    return jsonError(`Missing or invalid required field(s): ${missing.join(", ")}.`, 400)
   }
 
   // 1b. Parse + clamp optional tuning parameters. Every value is bounded
@@ -103,7 +98,7 @@ export async function POST(request: NextRequest) {
     startUrl = await assertPublicUrl(website as string)
   } catch (err) {
     const reason = err instanceof UrlRejectedError ? err.message : "The submitted website could not be validated."
-    return corsJson(request, { crawlStatus: "unavailable", error: reason }, 400)
+    return NextResponse.json({ crawlStatus: "unavailable", error: reason }, { status: 400 })
   }
 
   const startedAt = new Date().toISOString()
@@ -112,7 +107,7 @@ export async function POST(request: NextRequest) {
   try {
     rootHostname = new URL(startUrl).hostname
   } catch {
-    return jsonError(request, "The submitted website could not be validated.", 400)
+    return jsonError("The submitted website could not be validated.", 400)
   }
 
   // 3. Crawl the homepage FIRST (sequentially) so we have a same-site seed of
@@ -231,7 +226,7 @@ export async function POST(request: NextRequest) {
         error: "The website could not be crawled.",
         crawlMeta: { pagesAttempted, pagesSuccessfullyCrawled, startedAt, completedAt: new Date().toISOString() },
       },
-      { status: 200, headers: corsHeaders(request) },
+      { status: 200 },
     )
   }
 
@@ -281,7 +276,7 @@ export async function POST(request: NextRequest) {
       startedAt,
       completedAt,
     },
-  }, { headers: corsHeaders(request) })
+  })
 }
 
 function failedPage(
@@ -558,10 +553,10 @@ function buildDuplicateEvidence(pages: PageAnalysis[]) {
 }
 
 // Reject non-POST methods.
-function methodNotAllowed(request: NextRequest) {
+function methodNotAllowed() {
   return NextResponse.json(
     { error: "Method not allowed. Use POST." },
-    { status: 405, headers: { ...corsHeaders(request), Allow: "POST, OPTIONS" } },
+    { status: 405, headers: { Allow: "POST" } },
   )
 }
 
