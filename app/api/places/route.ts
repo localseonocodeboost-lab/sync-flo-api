@@ -62,54 +62,11 @@ export async function OPTIONS(request: NextRequest) {
   return corsOptions(request)
 }
 
-export async function POST(request: NextRequest) {
-  const apiKey = process.env.GOOGLE_PLACES_API_KEY
-
-  if (!isNonEmptyString(apiKey)) {
-    console.error(
-      "[SyncFlo] GOOGLE_PLACES_API_KEY is not configured on the server.",
-    )
-    return jsonError(request, "Server configuration error.", 500)
-  }
-
-  let body: PlacesRequestBody
-
-  try {
-    body = (await request.json()) as PlacesRequestBody
-  } catch {
-    return jsonError(request, "Invalid JSON body.", 400)
-  }
-
-  const businessName = isNonEmptyString(body.businessName)
-    ? body.businessName.trim()
-    : null
-
-  const service = isNonEmptyString(body.service)
-    ? body.service.trim()
-    : null
-
-  const location = isNonEmptyString(body.location)
-    ? body.location.trim()
-    : null
-
-  const missing: string[] = []
-
-  if (!businessName) missing.push("businessName")
-  if (!service) missing.push("service")
-  if (!location) missing.push("location")
-
-  if (missing.length > 0) {
-    return jsonError(
-      request,
-      `Missing or invalid required field(s): ${missing.join(", ")}.`,
-      400,
-    )
-  }
-
-  const textQuery = `${businessName} ${service} ${location}`
-    .replace(/\s+/g, " ")
-    .trim()
-
+async function searchGooglePlaces(
+  apiKey: string,
+  textQuery: string,
+  maxResultCount: number,
+): Promise<CleanPlace[]> {
   let googleResponse: Response
 
   try {
@@ -120,17 +77,20 @@ export async function POST(request: NextRequest) {
         "X-Goog-Api-Key": apiKey,
         "X-Goog-FieldMask": FIELD_MASK,
       },
-      body: JSON.stringify({ textQuery }),
+      body: JSON.stringify({
+        textQuery,
+        maxResultCount,
+        languageCode: "en",
+        regionCode: "GB",
+      }),
       cache: "no-store",
     })
   } catch (err) {
-    console.error("[SyncFlo] Failed to reach Google Places API:", err)
-
-    return jsonError(
-      request,
-      "Failed to reach the places provider.",
-      502,
+    console.error(
+      `[SyncFlo] Failed to reach Google Places API for query "${textQuery}":`,
+      err,
     )
+    throw new Error("Failed to reach the places provider.")
   }
 
   if (!googleResponse.ok) {
@@ -143,16 +103,12 @@ export async function POST(request: NextRequest) {
     }
 
     console.error(
-      "[SyncFlo] Google Places API error:",
+      `[SyncFlo] Google Places API error for query "${textQuery}":`,
       googleResponse.status,
       upstreamDetail,
     )
 
-    return jsonError(
-      request,
-      "Places provider returned an error.",
-      502,
-    )
+    throw new Error("Places provider returned an error.")
   }
 
   let data: { places?: unknown[] }
@@ -162,10 +118,8 @@ export async function POST(request: NextRequest) {
       places?: unknown[]
     }
   } catch {
-    return jsonError(
-      request,
+    throw new Error(
       "Received an invalid response from the places provider.",
-      502,
     )
   }
 
@@ -173,7 +127,7 @@ export async function POST(request: NextRequest) {
     ? data.places
     : []
 
-  const places: CleanPlace[] = rawPlaces.map((raw) => {
+  return rawPlaces.map((raw) => {
     const p = (raw ?? {}) as Record<string, any>
 
     return {
@@ -230,15 +184,140 @@ export async function POST(request: NextRequest) {
           : null,
     }
   })
+}
+
+function dedupePlaces(places: CleanPlace[]): CleanPlace[] {
+  const seen = new Set<string>()
+  const deduped: CleanPlace[] = []
+
+  for (const place of places) {
+    const key =
+      place.placeId ??
+      `${place.name ?? ""}|${place.formattedAddress ?? ""}`
+
+    if (seen.has(key)) continue
+
+    seen.add(key)
+    deduped.push(place)
+  }
+
+  return deduped
+}
+
+export async function POST(request: NextRequest) {
+  const apiKey = process.env.GOOGLE_PLACES_API_KEY
+
+  if (!isNonEmptyString(apiKey)) {
+    console.error(
+      "[SyncFlo] GOOGLE_PLACES_API_KEY is not configured on the server.",
+    )
+    return jsonError(request, "Server configuration error.", 500)
+  }
+
+  let body: PlacesRequestBody
+
+  try {
+    body = (await request.json()) as PlacesRequestBody
+  } catch {
+    return jsonError(request, "Invalid JSON body.", 400)
+  }
+
+  const businessName = isNonEmptyString(body.businessName)
+    ? body.businessName.trim()
+    : null
+
+  const service = isNonEmptyString(body.service)
+    ? body.service.trim()
+    : null
+
+  const location = isNonEmptyString(body.location)
+    ? body.location.trim()
+    : null
+
+  const missing: string[] = []
+
+  if (!businessName) missing.push("businessName")
+  if (!service) missing.push("service")
+  if (!location) missing.push("location")
+
+  if (missing.length > 0) {
+    return jsonError(
+      request,
+      `Missing or invalid required field(s): ${missing.join(", ")}.`,
+      400,
+    )
+  }
+
+  /*
+   * Query 1: identity search.
+   * Purpose: reliably find the submitted business.
+   *
+   * Example:
+   *   "Sync Flo web design hull"
+   */
+  const identityQuery =
+    `${businessName} ${service} ${location}`
+      .replace(/\s+/g, " ")
+      .trim()
+
+  /*
+   * Query 2: competitor discovery.
+   * IMPORTANT: intentionally excludes the business name.
+   *
+   * Example:
+   *   "web design hull"
+   *
+   * This is what gives the frontend genuine local competitor
+   * candidates instead of returning only the submitted business.
+   */
+  const competitorQuery =
+    `${service} ${location}`
+      .replace(/\s+/g, " ")
+      .trim()
+
+  let identityPlaces: CleanPlace[]
+  let competitorPlaces: CleanPlace[]
+
+  try {
+    ;[identityPlaces, competitorPlaces] = await Promise.all([
+      searchGooglePlaces(apiKey, identityQuery, 5),
+      searchGooglePlaces(apiKey, competitorQuery, 10),
+    ])
+  } catch (err) {
+    const message =
+      err instanceof Error
+        ? err.message
+        : "Places provider returned an error."
+
+    return jsonError(
+      request,
+      message,
+      502,
+    )
+  }
+
+  /*
+   * Put identity results first so the existing frontend matcher sees
+   * the submitted business early, then append competitor candidates.
+   * De-dupe by Google Place ID so the submitted business does not appear twice.
+   */
+  const places = dedupePlaces([
+    ...identityPlaces,
+    ...competitorPlaces,
+  ])
 
   return corsJson(request, {
     query: {
       businessName,
       service,
       location,
-      textQuery,
+      textQuery: identityQuery,
+      identityQuery,
+      competitorQuery,
     },
     resultCount: places.length,
+    identityResultCount: identityPlaces.length,
+    competitorResultCount: competitorPlaces.length,
     places,
   })
 }
