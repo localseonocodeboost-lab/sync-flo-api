@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server"
 
-export const ALLOWED_ORIGINS = new Set([
+const ALLOWED_ORIGINS = new Set([
   "https://syncflo.co.uk",
   "https://www.syncflo.co.uk",
 ])
