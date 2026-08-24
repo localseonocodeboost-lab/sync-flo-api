@@ -43,6 +43,23 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0
 }
 
+function normalizeWebsiteInput(value: unknown): string | null {
+  if (!isNonEmptyString(value)) return null
+
+  let normalized = value.trim()
+
+  // Remove accidental escaping such as:
+  // www\.syncflo\.co\.uk -> www.syncflo.co.uk
+  normalized = normalized.replace(/\\/g, "")
+
+  // Accept normal domain input without forcing users to type a protocol.
+  if (!/^https?:\/\//i.test(normalized)) {
+    normalized = `https://${normalized}`
+  }
+
+  return normalized
+}
+
 function clampInt(
   value: unknown,
   min: number,
@@ -102,9 +119,7 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const website = isNonEmptyString(body.website)
-    ? body.website.trim()
-    : null
+  const website = normalizeWebsiteInput(body.website)
 
   const businessName = isNonEmptyString(body.businessName)
     ? body.businessName.trim()
