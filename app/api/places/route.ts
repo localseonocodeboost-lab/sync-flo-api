@@ -1,4 +1,4 @@
-import { type NextRequest, NextResponse } from "next/server"
+mport { type NextRequest, NextResponse } from "next/server"
 import { corsHeaders, corsJson, corsOptions } from "../../../lib/cors"
 
 export const runtime = "nodejs"
@@ -124,10 +124,7 @@ export async function POST(request: NextRequest) {
       cache: "no-store",
     })
   } catch (err) {
-    console.error(
-      "[SyncFlo] Failed to reach Google Places API:",
-      err,
-    )
+    console.error("[SyncFlo] Failed to reach Google Places API:", err)
 
     return jsonError(
       request,
@@ -181,7 +178,9 @@ export async function POST(request: NextRequest) {
 
     return {
       placeId:
-        typeof p.id === "string" ? p.id : null,
+        typeof p.id === "string"
+          ? p.id
+          : null,
 
       name:
         typeof p?.displayName?.text === "string"
