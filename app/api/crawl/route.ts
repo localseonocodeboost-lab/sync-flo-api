@@ -11,7 +11,6 @@ import {
   analyzePage,
   jaccardSimilarity,
   type PageAnalysis,
-  type PageType,
 } from "../../../lib/crawl/analyze"
 
 export const runtime = "nodejs"
@@ -59,7 +58,10 @@ function clampInt(
 
   if (!Number.isFinite(n)) return fallback
 
-  return Math.min(max, Math.max(min, Math.floor(n)))
+  return Math.min(
+    max,
+    Math.max(min, Math.floor(n)),
+  )
 }
 
 function jsonError(
@@ -93,7 +95,11 @@ export async function POST(request: NextRequest) {
   try {
     body = (await request.json()) as CrawlRequestBody
   } catch {
-    return jsonError(request, "Invalid JSON body.", 400)
+    return jsonError(
+      request,
+      "Invalid JSON body.",
+      400,
+    )
   }
 
   const website = isNonEmptyString(body.website)
@@ -151,7 +157,7 @@ export async function POST(request: NextRequest) {
   let startUrl: string
 
   try {
-    startUrl = await assertPublicUrl(website as string)
+    startUrl = await assertPublicUrl(website)
   } catch (err) {
     const reason =
       err instanceof UrlRejectedError
@@ -185,7 +191,10 @@ export async function POST(request: NextRequest) {
   const canonicalStart =
     canonicalizeUrl(startUrl) ?? startUrl
 
-  const visited = new Set<string>([canonicalStart])
+  const visited = new Set<string>([
+    canonicalStart,
+  ])
+
   const queue: QueueItem[] = []
   const pages: PageAnalysis[] = []
 
@@ -220,9 +229,9 @@ export async function POST(request: NextRequest) {
         html: result.html,
         isHomepage,
         rootHostname,
-        businessName: businessName as string,
-        service: service as string,
-        location: location as string,
+        businessName,
+        service,
+        location,
       })
 
       if (result.ok) {
@@ -246,9 +255,12 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  function enqueueLinks(analysis: PageAnalysis) {
+  function enqueueLinks(
+    analysis: PageAnalysis,
+  ) {
     for (const link of analysis.internalLinks) {
-      const canon = canonicalizeUrl(link.url)
+      const canon =
+        canonicalizeUrl(link.url)
 
       if (!canon) continue
       if (visited.has(canon)) continue
@@ -263,8 +275,8 @@ export async function POST(request: NextRequest) {
         priority: urlPriority(
           canon,
           link.anchor,
-          service as string,
-          location as string,
+          service,
+          location,
         ),
       })
     }
@@ -308,18 +320,17 @@ export async function POST(request: NextRequest) {
 
       const item = queue.shift()
 
-      if (!item) {
-        continue
-      }
+      if (!item) continue
 
       pagesAttempted++
       activeWorkers++
 
       try {
-        const analysis = await crawlOne(
-          item.url,
-          false,
-        )
+        const analysis =
+          await crawlOne(
+            item.url,
+            false,
+          )
 
         pages.push(analysis)
 
@@ -356,12 +367,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         crawlStatus: "unavailable",
-        error: "The website could not be crawled.",
+        error:
+          "The website could not be crawled.",
         crawlMeta: {
           pagesAttempted,
           pagesSuccessfullyCrawled,
           startedAt,
-          completedAt: new Date().toISOString(),
+          completedAt:
+            new Date().toISOString(),
         },
       },
       {
@@ -374,27 +387,31 @@ export async function POST(request: NextRequest) {
   const serviceEvidence =
     buildServiceEvidence(
       pages,
-      service as string,
+      service,
     )
 
   const locationEvidence =
     buildLocationEvidence(
       homepage,
       pages,
-      location as string,
+      location,
     )
 
   const contactEvidence =
     buildContactEvidence(
       pages,
-      businessName as string,
+      businessName,
     )
 
   const schemaEvidence =
-    buildSchemaEvidence(pages)
+    buildSchemaEvidence(
+      pages,
+    )
 
   const duplicateEvidence =
-    buildDuplicateEvidence(pages)
+    buildDuplicateEvidence(
+      pages,
+    )
 
   const completedAt =
     new Date().toISOString()
@@ -403,9 +420,9 @@ export async function POST(request: NextRequest) {
     pagesSuccessfullyCrawled === 0
       ? "unavailable"
       : pages.some(
-            (page) =>
-              !page.fetchOk ||
-              page.error,
+            (p) =>
+              !p.fetchOk ||
+              p.error,
           )
         ? "partial"
         : "success"
@@ -425,15 +442,21 @@ export async function POST(request: NextRequest) {
         submittedUrl: website,
         finalUrl: homepage.finalUrl,
         rootHostname,
-        httpsActive: homepage.httpsActive,
-        reachable: homepage.fetchOk,
+        httpsActive:
+          homepage.httpsActive,
+        reachable:
+          homepage.fetchOk,
       },
 
       homepage:
-        toHomepageEvidence(homepage),
+        toHomepageEvidence(
+          homepage,
+        ),
 
       pages:
-        pages.map(toPageEvidence),
+        pages.map(
+          toPageEvidence,
+        ),
 
       serviceEvidence,
       locationEvidence,
@@ -447,13 +470,15 @@ export async function POST(request: NextRequest) {
         maxPages,
         perPageTimeoutMs,
         concurrency,
-        maxPagesCeiling: MAX_PAGES,
+        maxPagesCeiling:
+          MAX_PAGES,
         startedAt,
         completedAt,
       },
     },
     {
-      headers: corsHeaders(request),
+      headers:
+        corsHeaders(request),
     },
   )
 }
@@ -503,93 +528,102 @@ function failedPage(
 }
 
 function toHomepageEvidence(
-  page: PageAnalysis,
+  p: PageAnalysis,
 ) {
   return {
-    finalUrl: page.finalUrl,
-    status: page.status,
-    httpsActive: page.httpsActive,
-    title: page.title,
+    finalUrl: p.finalUrl,
+    status: p.status,
+    httpsActive:
+      p.httpsActive,
+    title: p.title,
     metaDescription:
-      page.metaDescription,
-    h1: page.h1,
-    canonical: page.canonical,
-    metaRobots: page.metaRobots,
-    indexable: page.indexable,
+      p.metaDescription,
+    h1: p.h1,
+    canonical: p.canonical,
+    metaRobots:
+      p.metaRobots,
+    indexable:
+      p.indexable,
     businessNameMentioned:
-      page.businessNameMentioned,
+      p.businessNameMentioned,
     serviceMentioned:
-      page.serviceMentioned,
+      p.serviceMentioned,
     serviceInTitle:
-      page.serviceInTitle,
+      p.serviceInTitle,
     serviceInH1:
-      page.serviceInH1,
+      p.serviceInH1,
     locationMentioned:
-      page.locationMentioned,
+      p.locationMentioned,
     locationInTitle:
-      page.locationInTitle,
+      p.locationInTitle,
     locationInH1:
-      page.locationInH1,
+      p.locationInH1,
     phoneNumbers:
-      page.phoneNumbers,
+      p.phoneNumbers,
     emailAddresses:
-      page.emailAddresses,
+      p.emailAddresses,
     postalAddresses:
-      page.postalAddresses,
+      p.postalAddresses,
     schemaTypes:
-      page.schemaTypes,
+      p.schemaTypes,
     internalLinkCount:
-      page.internalLinks.length,
+      p.internalLinks.length,
     externalLinks:
-      page.externalLinks,
-    wordCount: page.wordCount,
+      p.externalLinks,
+    wordCount:
+      p.wordCount,
   }
 }
 
 function toPageEvidence(
-  page: PageAnalysis,
+  p: PageAnalysis,
 ) {
   return {
-    url: page.url,
-    finalUrl: page.finalUrl,
-    status: page.status,
-    fetchOk: page.fetchOk,
-    pageType: page.pageType,
-    title: page.title,
+    url: p.url,
+    finalUrl:
+      p.finalUrl,
+    status: p.status,
+    fetchOk:
+      p.fetchOk,
+    pageType:
+      p.pageType,
+    title: p.title,
     metaDescription:
-      page.metaDescription,
-    h1: page.h1,
-    canonical: page.canonical,
+      p.metaDescription,
+    h1: p.h1,
+    canonical:
+      p.canonical,
     metaRobots:
-      page.metaRobots,
-    indexable: page.indexable,
-    wordCount: page.wordCount,
+      p.metaRobots,
+    indexable:
+      p.indexable,
+    wordCount:
+      p.wordCount,
     serviceMentioned:
-      page.serviceMentioned,
+      p.serviceMentioned,
     serviceMentionCount:
-      page.serviceMentionCount,
+      p.serviceMentionCount,
     serviceInTitle:
-      page.serviceInTitle,
+      p.serviceInTitle,
     serviceInH1:
-      page.serviceInH1,
+      p.serviceInH1,
     locationMentioned:
-      page.locationMentioned,
+      p.locationMentioned,
     locationMentionCount:
-      page.locationMentionCount,
+      p.locationMentionCount,
     locationInTitle:
-      page.locationInTitle,
+      p.locationInTitle,
     locationInH1:
-      page.locationInH1,
+      p.locationInH1,
     internalLinkCount:
-      page.internalLinks.length,
+      p.internalLinks.length,
     schemaTypes:
-      page.schemaTypes,
+      p.schemaTypes,
     contentFingerprint:
-      page.contentFingerprint,
-
-    ...(page.error
+      p.contentFingerprint,
+    ...(p.error
       ? {
-          error: page.error,
+          error: p.error,
         }
       : {}),
   }
@@ -601,38 +635,38 @@ function buildServiceEvidence(
 ) {
   const servicePages =
     pages.filter(
-      (page) =>
-        page.pageType === "service" &&
-        page.fetchOk,
+      (p) =>
+        p.pageType === "service" &&
+        p.fetchOk,
     )
 
   const dedicated =
     servicePages.filter(
-      (page) =>
-        page.serviceInTitle ||
-        page.serviceInH1 ||
-        page.serviceMentionCount >= 3,
+      (p) =>
+        p.serviceInTitle ||
+        p.serviceInH1 ||
+        p.serviceMentionCount >= 3,
     )
 
   const linkedUrls =
     new Set<string>()
 
-  for (const page of pages) {
-    for (const link of page.internalLinks) {
-      linkedUrls.add(link.url)
+  for (const p of pages) {
+    for (const l of p.internalLinks) {
+      linkedUrls.add(l.url)
     }
   }
 
   return {
-    submittedService: service,
+    submittedService:
+      service,
 
     servicePageCount:
       servicePages.length,
 
     servicePageUrls:
       servicePages.map(
-        (page) =>
-          page.finalUrl,
+        (p) => p.finalUrl,
       ),
 
     dedicatedServicePageExists:
@@ -640,45 +674,44 @@ function buildServiceEvidence(
 
     dedicatedServicePageUrls:
       dedicated.map(
-        (page) =>
-          page.finalUrl,
+        (p) => p.finalUrl,
       ),
 
     serviceProminentPages:
       pages
         .filter(
-          (page) =>
-            page.fetchOk &&
+          (p) =>
+            p.fetchOk &&
             (
-              page.serviceInTitle ||
-              page.serviceInH1
+              p.serviceInTitle ||
+              p.serviceInH1
             ),
         )
         .map(
-          (page) => ({
+          (p) => ({
             url:
-              page.finalUrl,
+              p.finalUrl,
 
             inTitle:
-              page.serviceInTitle,
+              p.serviceInTitle,
 
             inH1:
-              page.serviceInH1,
+              p.serviceInH1,
           }),
         ),
 
     servicePagesInternallyLinked:
       servicePages.map(
-        (page) => ({
+        (p) => ({
           url:
-            page.finalUrl,
+            p.finalUrl,
 
           internallyLinked:
             linkedUrls.has(
               canonicalizeUrl(
-                page.finalUrl,
+                p.finalUrl,
               ) ??
-                page.finalUrl,
+                p.finalUrl,
             ),
         }),
       ),
@@ -692,18 +725,18 @@ function buildLocationEvidence(
 ) {
   const locationPages =
     pages.filter(
-      (page) =>
-        page.pageType ===
+      (p) =>
+        p.pageType ===
           "location" &&
-        page.fetchOk,
+        p.fetchOk,
     )
 
   const servicePlusLocation =
     pages.filter(
-      (page) =>
-        page.fetchOk &&
-        page.serviceMentioned &&
-        page.locationMentioned,
+      (p) =>
+        p.fetchOk &&
+        p.serviceMentioned &&
+        p.locationMentioned,
     )
 
   return {
@@ -724,44 +757,44 @@ function buildLocationEvidence(
 
     locationPageUrls:
       locationPages.map(
-        (page) =>
-          page.finalUrl,
+        (p) =>
+          p.finalUrl,
       ),
 
     locationInTitleOrH1Pages:
       pages
         .filter(
-          (page) =>
-            page.fetchOk &&
+          (p) =>
+            p.fetchOk &&
             (
-              page.locationInTitle ||
-              page.locationInH1
+              p.locationInTitle ||
+              p.locationInH1
             ),
         )
         .map(
-          (page) => ({
+          (p) => ({
             url:
-              page.finalUrl,
+              p.finalUrl,
 
             inTitle:
-              page.locationInTitle,
+              p.locationInTitle,
 
             inH1:
-              page.locationInH1,
+              p.locationInH1,
           }),
         ),
 
     serviceAndLocationPages:
       servicePlusLocation.map(
-        (page) => ({
+        (p) => ({
           url:
-            page.finalUrl,
+            p.finalUrl,
 
           serviceMentionCount:
-            page.serviceMentionCount,
+            p.serviceMentionCount,
 
           locationMentionCount:
-            page.locationMentionCount,
+            p.locationMentionCount,
         }),
       ),
   }
@@ -780,35 +813,26 @@ function buildContactEvidence(
   const addresses =
     new Set<string>()
 
-  for (const page of pages) {
-    for (
-      const phone of
-        page.phoneNumbers
-    ) {
-      phones.add(phone)
+  for (const p of pages) {
+    for (const x of p.phoneNumbers) {
+      phones.add(x)
     }
 
-    for (
-      const email of
-        page.emailAddresses
-    ) {
-      emails.add(email)
+    for (const x of p.emailAddresses) {
+      emails.add(x)
     }
 
-    for (
-      const address of
-        page.postalAddresses
-    ) {
-      addresses.add(address)
+    for (const x of p.postalAddresses) {
+      addresses.add(x)
     }
   }
 
   const contactPage =
     pages.find(
-      (page) =>
-        page.pageType ===
+      (p) =>
+        p.pageType ===
           "contact" &&
-        page.fetchOk,
+        p.fetchOk,
     )
 
   return {
@@ -816,8 +840,8 @@ function buildContactEvidence(
 
     businessNameFoundOnSite:
       pages.some(
-        (page) =>
-          page.businessNameMentioned,
+        (p) =>
+          p.businessNameMentioned,
       ),
 
     phoneNumbers:
@@ -877,13 +901,13 @@ function buildSchemaEvidence(
   let unparsableFound =
     false
 
-  for (const page of pages) {
+  for (const p of pages) {
     for (
-      const type of
-        page.schemaTypes
+      const t of
+        p.schemaTypes
     ) {
       if (
-        type ===
+        t ===
         "_unparsable_jsonld_"
       ) {
         unparsableFound =
@@ -893,18 +917,18 @@ function buildSchemaEvidence(
       }
 
       if (
-        !allTypes.has(type)
+        !allTypes.has(t)
       ) {
         allTypes.set(
-          type,
+          t,
           [],
         )
       }
 
       allTypes
-        .get(type)!
+        .get(t)!
         .push(
-          page.finalUrl,
+          p.finalUrl,
         )
     }
   }
@@ -913,9 +937,9 @@ function buildSchemaEvidence(
     Array.from(
       allTypes.keys(),
     ).filter(
-      (type) =>
+      (t) =>
         localBusinessTypes.has(
-          type.toLowerCase(),
+          t.toLowerCase(),
         ),
     )
 
@@ -952,15 +976,15 @@ function buildDuplicateEvidence(
 ) {
   const candidates =
     pages.filter(
-      (page) =>
-        page.fetchOk &&
+      (p) =>
+        p.fetchOk &&
         (
-          page.pageType ===
+          p.pageType ===
             "service" ||
-          page.pageType ===
+          p.pageType ===
             "location"
         ) &&
-        page.shingles.length >
+        p.shingles.length >
           0,
     )
 
@@ -1014,43 +1038,43 @@ function buildDuplicateEvidence(
       a.similarity,
   )
 
-  const fingerprintGroups =
+  const fpGroups =
     new Map<
       string,
       string[]
     >()
 
-  for (const page of pages) {
+  for (const p of pages) {
     if (
-      !page.contentFingerprint ||
-      !page.fetchOk
+      !p.contentFingerprint ||
+      !p.fetchOk
     ) {
       continue
     }
 
     if (
-      !fingerprintGroups.has(
-        page.contentFingerprint,
+      !fpGroups.has(
+        p.contentFingerprint,
       )
     ) {
-      fingerprintGroups.set(
-        page.contentFingerprint,
+      fpGroups.set(
+        p.contentFingerprint,
         [],
       )
     }
 
-    fingerprintGroups
+    fpGroups
       .get(
-        page.contentFingerprint,
+        p.contentFingerprint,
       )!
       .push(
-        page.finalUrl,
+        p.finalUrl,
       )
   }
 
   const exactDuplicateGroups =
     Array.from(
-      fingerprintGroups.values(),
+      fpGroups.values(),
     ).filter(
       (urls) =>
         urls.length > 1,
@@ -1062,8 +1086,8 @@ function buildDuplicateEvidence(
 
     possibleDuplicate:
       comparisons.some(
-        (comparison) =>
-          comparison.possibleDuplicate,
+        (c) =>
+          c.possibleDuplicate,
       ) ||
       exactDuplicateGroups.length >
         0,
