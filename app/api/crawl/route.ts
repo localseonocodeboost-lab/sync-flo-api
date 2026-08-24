@@ -133,6 +133,13 @@ export async function POST(request: NextRequest) {
     )
   }
 
+  // TypeScript cannot infer non-nullability from the missing[] validation above.
+  // From this point onward all four required inputs are guaranteed strings.
+  const validatedWebsite = website as string
+  const validatedBusinessName = businessName as string
+  const validatedService = service as string
+  const validatedLocation = location as string
+
   const maxPages = clampInt(
     body.maxPages,
     MIN_PAGES,
@@ -157,7 +164,7 @@ export async function POST(request: NextRequest) {
   let startUrl: string
 
   try {
-    startUrl = await assertPublicUrl(website)
+    startUrl = await assertPublicUrl(validatedWebsite)
   } catch (err) {
     const reason =
       err instanceof UrlRejectedError
@@ -229,9 +236,9 @@ export async function POST(request: NextRequest) {
         html: result.html,
         isHomepage,
         rootHostname,
-        businessName,
-        service,
-        location,
+        businessName: validatedBusinessName,
+        service: validatedService,
+        location: validatedLocation,
       })
 
       if (result.ok) {
@@ -275,8 +282,8 @@ export async function POST(request: NextRequest) {
         priority: urlPriority(
           canon,
           link.anchor,
-          service,
-          location,
+          validatedService,
+          validatedLocation,
         ),
       })
     }
@@ -387,20 +394,20 @@ export async function POST(request: NextRequest) {
   const serviceEvidence =
     buildServiceEvidence(
       pages,
-      service,
+      validatedService,
     )
 
   const locationEvidence =
     buildLocationEvidence(
       homepage,
       pages,
-      location,
+      validatedLocation,
     )
 
   const contactEvidence =
     buildContactEvidence(
       pages,
-      businessName,
+      validatedBusinessName,
     )
 
   const schemaEvidence =
