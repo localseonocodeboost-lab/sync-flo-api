@@ -1271,8 +1271,7 @@ export async function POST(request: NextRequest) {
       startedAt,
       completedAt,
     },
-  }
-
+  }:
   return NextResponse.json(
     responseBody,
     {
