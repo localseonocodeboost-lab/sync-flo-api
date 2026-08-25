@@ -65,7 +65,7 @@ function normalizeWebsiteInput(value: unknown): string | null {
 
   // Add protocol if missing
   if (!/^https?:\/\//i.test(normalized)) {
-    normalized = 'https://${normalized}'
+    normalized = `https://${normalized}`
   }
 
   try {
@@ -160,7 +160,7 @@ async function fetchRenderedHtml(
       {
         method: "POST",
         headers: {
-          Authorization: 'Bearer ${apiKey}',
+          Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
@@ -303,7 +303,7 @@ export async function POST(
   if (missing.length > 0) {
     return jsonError(
       request,
-      'Missing or invalid required field(s): ${missing.join(", ")}.',
+      `Missing or invalid required field(s): ${missing.join(", ")}.`,
       400,
     )
   }
