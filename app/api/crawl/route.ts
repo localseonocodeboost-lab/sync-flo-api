@@ -1158,10 +1158,10 @@ export async function POST(request: NextRequest) {
 
       serviceProminentPages,
 
-      servicePagesInternallyLinked,
+      servicePagesInternallyLinked,},
           locationEvidence: {
       submittedLocation:
-        validatedLocation,
+        validatedLocation, 
 
       locationOnHomepage:
         homepage.locationMentioned,
