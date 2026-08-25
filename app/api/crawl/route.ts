@@ -43,16 +43,16 @@ type CrawlRequestBody = {
   concurrency?: unknown
 }
 
-type RenderedFetchResult = {
-  html: string
-  finalUrl: string
-  status: number
-}
-
 type QueueItem = {
   url: string
   anchor: string
   priority: number
+}
+
+type RenderedFetchResult = {
+  html: string
+  finalUrl: string
+  status: number
 }
 
 function isNonEmptyString(value: unknown): value is string {
@@ -64,10 +64,12 @@ function normalizeWebsiteInput(value: unknown): string | null {
 
   let normalized = value.trim()
 
+  // Handles accidental escaped domains such as:
+  // www\.syncflo\.co\.uk
   normalized = normalized.replace(/\\/g, "")
 
   if (!/^https?:\/\//i.test(normalized)) {
-    normalized = `https://${normalized}`
+    normalized = https://${normalized}
   }
 
   return normalized
@@ -109,7 +111,9 @@ function jsonError(
   )
 }
 
-function needsRenderedFallback(analysis: PageAnalysis): boolean {
+function needsRenderedFallback(
+  analysis: PageAnalysis,
+): boolean {
   return (
     analysis.fetchOk &&
     (
@@ -132,34 +136,38 @@ async function fetchRenderedHtml(
   }
 
   const controller = new AbortController()
+
   const timer = setTimeout(
     () => controller.abort(),
     FIRECRAWL_TIMEOUT_MS + 2_000,
   )
 
   try {
-    const response = await fetch(FIRECRAWL_SCRAPE_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        url,
-        formats: ["html"],
-        onlyMainContent: false,
-        waitFor: FIRECRAWL_WAIT_MS,
-        timeout: FIRECRAWL_TIMEOUT_MS,
-        blockAds: true,
-        storeInCache: true,
-        location: {
-          country: "GB",
-          languages: ["en-GB", "en"],
+    const response = await fetch(
+      FIRECRAWL_SCRAPE_URL,
+      {
+        method: "POST",
+        headers: {
+          Authorization: Bearer ${apiKey},
+          "Content-Type": "application/json",
         },
-      }),
-      signal: controller.signal,
-      cache: "no-store",
-    })
+        body: JSON.stringify({
+          url,
+          formats: ["html"],
+          onlyMainContent: false,
+          waitFor: FIRECRAWL_WAIT_MS,
+          timeout: FIRECRAWL_TIMEOUT_MS,
+          blockAds: true,
+          storeInCache: true,
+          location: {
+            country: "GB",
+            languages: ["en-GB", "en"],
+          },
+        }),
+        signal: controller.signal,
+        cache: "no-store",
+      },
+    )
 
     if (!response.ok) {
       const detail = await response
@@ -233,15 +241,20 @@ async function fetchRenderedHtml(
   }
 }
 
-export async function OPTIONS(request: NextRequest) {
+export async function OPTIONS(
+  request: NextRequest,
+) {
   return corsOptions(request)
 }
 
-export async function POST(request: NextRequest) {
+export async function POST(
+  request: NextRequest,
+) {
   let body: CrawlRequestBody
 
   try {
-    body = (await request.json()) as CrawlRequestBody
+    body =
+      (await request.json()) as CrawlRequestBody
   } catch {
     return jsonError(
       request,
@@ -250,19 +263,23 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const website = normalizeWebsiteInput(body.website)
+  const website =
+    normalizeWebsiteInput(body.website)
 
-  const businessName = isNonEmptyString(body.businessName)
-    ? body.businessName.trim()
-    : null
+  const businessName =
+    isNonEmptyString(body.businessName)
+      ? body.businessName.trim()
+      : null
 
-  const service = isNonEmptyString(body.service)
-    ? body.service.trim()
-    : null
+  const service =
+    isNonEmptyString(body.service)
+      ? body.service.trim()
+      : null
 
-  const location = isNonEmptyString(body.location)
-    ? body.location.trim()
-    : null
+  const location =
+    isNonEmptyString(body.location)
+      ? body.location.trim()
+      : null
 
   const missing: string[] = []
 
@@ -274,15 +291,22 @@ export async function POST(request: NextRequest) {
   if (missing.length > 0) {
     return jsonError(
       request,
-      `Missing or invalid required field(s): ${missing.join(", ")}.`,
+      Missing or invalid required field(s): ${missing.join(", ")}.,
       400,
     )
   }
 
-  const validatedWebsite = website as string
-  const validatedBusinessName = businessName as string
-  const validatedService = service as string
-  const validatedLocation = location as string
+  const validatedWebsite =
+    website as string
+
+  const validatedBusinessName =
+    businessName as string
+
+  const validatedService =
+    service as string
+
+  const validatedLocation =
+    location as string
 
   const maxPages = clampInt(
     body.maxPages,
@@ -308,7 +332,8 @@ export async function POST(request: NextRequest) {
   let startUrl: string
 
   try {
-    startUrl = await assertPublicUrl(validatedWebsite)
+    startUrl =
+      await assertPublicUrl(validatedWebsite)
   } catch (err) {
     const reason =
       err instanceof UrlRejectedError
@@ -325,12 +350,14 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const startedAt = new Date().toISOString()
+  const startedAt =
+    new Date().toISOString()
 
   let rootHostname: string
 
   try {
-    rootHostname = new URL(startUrl).hostname
+    rootHostname =
+      new URL(startUrl).hostname
   } catch {
     return jsonError(
       request,
@@ -342,9 +369,10 @@ export async function POST(request: NextRequest) {
   const canonicalStart =
     canonicalizeUrl(startUrl) ?? startUrl
 
-  const visited = new Set<string>([
-    canonicalStart,
-  ])
+  const visited =
+    new Set<string>([
+      canonicalStart,
+    ])
 
   const queue: QueueItem[] = []
   const pages: PageAnalysis[] = []
@@ -352,57 +380,19 @@ export async function POST(request: NextRequest) {
   let pagesAttempted = 0
   let pagesSuccessfullyCrawled = 0
   let activeWorkers = 0
-    function failedPage(
-    requestedUrl: string,
-    finalUrl: string,
-    status: number,
-    ok: boolean,
-    reason: string,
-  ): PageAnalysis {
-    return {
-      requestedUrl,
-      finalUrl,
-      status,
-      fetchOk: ok,
-      failureReason: reason,
-      pageType: "other",
-      title: null,
-      metaDescription: null,
-      h1: [],
-      canonical: null,
-      metaRobots: null,
-      indexable: false,
-      wordCount: 0,
-      visibleText: "",
-      serviceMentioned: false,
-      serviceMentionCount: 0,
-      serviceInTitle: false,
-      serviceInH1: false,
-      locationMentioned: false,
-      locationMentionCount: 0,
-      locationInTitle: false,
-      locationInH1: false,
-      businessNameMentioned: false,
-      phoneNumbers: [],
-      emailAddresses: [],
-      postalAddresses: [],
-      schemaTypes: [],
-      unparsableJsonLdFound: false,
-      internalLinks: [],
-      externalLinks: [],
-      contentFingerprint: "",
-      contentTokens: [],
-    }
-  }
 
   async function crawlOne(
     url: string,
     isHomepage: boolean,
   ): Promise<PageAnalysis> {
     try {
-      const result = await safeFetch(url, {
-        timeoutMs: perPageTimeoutMs,
-      })
+      const result = await safeFetch(
+        url,
+        {
+          timeoutMs:
+            perPageTimeoutMs,
+        },
+      )
 
       if (!result.html) {
         return failedPage(
@@ -414,54 +404,60 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      let analysis = analyzePage({
-        requestedUrl: url,
-        finalUrl: result.finalUrl,
-        status: result.status,
-        ok: result.ok,
-        html: result.html,
-        isHomepage,
-        rootHostname,
-        businessName: validatedBusinessName,
-        service: validatedService,
-        location: validatedLocation,
-      })
+      let analysis =
+        analyzePage({
+          requestedUrl: url,
+          finalUrl:
+            result.finalUrl,
+          status:
+            result.status,
+          ok:
+            result.ok,
+          html:
+            result.html,
+          isHomepage,
+          rootHostname,
+          businessName:
+            validatedBusinessName,
+          service:
+            validatedService,
+          location:
+            validatedLocation,
+        })
 
-      /*
-       * React / AI Studio sites can return a tiny HTML shell to a
-       * normal server-side request while JavaScript renders the actual
-       * page in the browser.
-       *
-       * When the first pass looks suspiciously thin, Firecrawl is used
-       * to obtain rendered HTML. Ordinary HTML sites continue to use
-       * the faster normal crawler.
-       */
-      if (needsRenderedFallback(analysis)) {
-        const rendered = await fetchRenderedHtml(
-          result.finalUrl || url,
+      if (
+        needsRenderedFallback(
+          analysis,
         )
+      ) {
+        const rendered =
+          await fetchRenderedHtml(
+            result.finalUrl || url,
+          )
 
         if (rendered?.html) {
-          const renderedAnalysis = analyzePage({
-            requestedUrl: url,
-            finalUrl: rendered.finalUrl,
-            status: rendered.status,
-            ok:
-              rendered.status >= 200 &&
-              rendered.status < 400,
-            html: rendered.html,
-            isHomepage,
-            rootHostname,
-            businessName: validatedBusinessName,
-            service: validatedService,
-            location: validatedLocation,
-          })
+          const renderedAnalysis =
+            analyzePage({
+              requestedUrl: url,
+              finalUrl:
+                rendered.finalUrl,
+              status:
+                rendered.status,
+              ok:
+                rendered.status >= 200 &&
+                rendered.status < 400,
+              html:
+                rendered.html,
+              isHomepage,
+              rootHostname,
+              businessName:
+                validatedBusinessName,
+              service:
+                validatedService,
+              location:
+                validatedLocation,
+            })
 
-          /*
-           * Compare the amount of useful evidence found by each method.
-           * We only replace the normal crawl when rendered HTML actually
-           * gives us a richer representation of the page.
-           */
           const rawEvidence =
             analysis.wordCount +
             analysis.internalLinks.length * 10 +
@@ -474,8 +470,12 @@ export async function POST(request: NextRequest) {
             renderedAnalysis.h1.length * 20 +
             renderedAnalysis.schemaTypes.length * 15
 
-          if (renderedEvidence > rawEvidence) {
-            analysis = renderedAnalysis
+          if (
+            renderedEvidence >
+            rawEvidence
+          ) {
+            analysis =
+              renderedAnalysis
           }
         }
       }
@@ -504,352 +504,998 @@ export async function POST(request: NextRequest) {
   function enqueueLinks(
     analysis: PageAnalysis,
   ) {
-    for (const link of analysis.internalLinks) {
-      if (!link.url) continue
-
-      const canonical =
+    for (
+      const link
+      of analysis.internalLinks
+    ) {
+      const canon =
         canonicalizeUrl(link.url)
 
-      if (!canonical) continue
+      if (!canon) continue
+      if (visited.has(canon)) continue
 
-      if (visited.has(canonical)) continue
-
-      if (!isSameSite(canonical, rootHostname)) {
+      if (
+        !isSameSite(
+          canon,
+          rootHostname,
+        )
+      ) {
         continue
       }
 
-      if (!isCrawlableUrl(canonical)) {
+      if (
+        !isCrawlableUrl(canon)
+      ) {
         continue
       }
 
-      visited.add(canonical)
+      visited.add(canon)
 
       queue.push({
-        url: canonical,
-        anchor: link.anchor ?? "",
-        priority: urlPriority(
-          canonical,
-          link.anchor ?? "",
-          validatedService,
-          validatedLocation,
-        ),
+        url: canon,
+        anchor: link.anchor,
+        priority:
+          urlPriority(
+            canon,
+            link.anchor,
+            validatedService,
+            validatedLocation,
+          ),
       })
     }
-
-    queue.sort(
-      (a, b) => b.priority - a.priority,
-    )
   }
 
-  /*
-   * Crawl the homepage first.
-   *
-   * This is important because its rendered navigation gives us the
-   * internal URLs used to populate the rest of the crawl queue.
-   */
   pagesAttempted++
 
-  const homepage = await crawlOne(
-    canonicalStart,
-    true,
-  )
+  const homepage =
+    await crawlOne(
+      startUrl,
+      true,
+    )
 
   pages.push(homepage)
-  enqueueLinks(homepage)
 
-  /*
-   * Crawl discovered pages with a small concurrency limit.
-   * We stop once maxPages has been reached.
-   */
+  if (
+    pages.length <
+    maxPages
+  ) {
+    enqueueLinks(homepage)
+  }
+
   async function worker() {
-    activeWorkers++
-
-    try {
-      while (
-        queue.length > 0 &&
-        pages.length < maxPages
+    while (true) {
+      if (
+        pagesAttempted >=
+        maxPages
       ) {
-        const next = queue.shift()
+        return
+      }
 
-        if (!next) break
+      if (
+        queue.length === 0
+      ) {
+        if (
+          activeWorkers > 0
+        ) {
+          await new Promise(
+            (resolve) =>
+              setTimeout(
+                resolve,
+                15,
+              ),
+          )
 
-        if (pages.length >= maxPages) {
-          break
+          continue
         }
 
-        pagesAttempted++
+        return
+      }
 
-        const analysis = await crawlOne(
-          next.url,
-          false,
+      queue.sort(
+        (a, b) =>
+          b.priority -
+          a.priority,
+      )
+
+      const item =
+        queue.shift()
+
+      if (!item) continue
+
+      pagesAttempted++
+      activeWorkers++
+
+      try {
+        const analysis =
+          await crawlOne(
+            item.url,
+            false,
+          )
+
+        pages.push(
+          analysis,
         )
 
-        pages.push(analysis)
-        enqueueLinks(analysis)
+        if (
+          pages.length <
+          maxPages
+        ) {
+          enqueueLinks(
+            analysis,
+          )
+        }
+      } finally {
+        activeWorkers--
       }
-    } finally {
-      activeWorkers--
     }
   }
 
   if (
     queue.length > 0 &&
-    pages.length < maxPages
+    pages.length <
+      maxPages
   ) {
-    const workerCount = Math.min(
-      concurrency,
-      queue.length,
-      maxPages - pages.length,
-    )
+    const workerCount =
+      Math.min(
+        concurrency,
+        Math.max(
+          1,
+          queue.length,
+        ),
+      )
 
     await Promise.all(
       Array.from(
-        { length: workerCount },
+        {
+          length:
+            workerCount,
+        },
         () => worker(),
       ),
     )
   }
 
-  /*
-   * Sort so the homepage stays first and the remaining pages are
-   * deterministic.
-   */
-  const homepageFinalUrl =
-    homepage.finalUrl || canonicalStart
+  if (
+    !homepage.fetchOk &&
+    pagesSuccessfullyCrawled ===
+      0
+  ) {
+    return NextResponse.json(
+      {
+        crawlStatus:
+          "unavailable",
 
-  const remainingPages = pages
-    .filter((page) => page !== homepage)
-    .sort((a, b) =>
-      a.finalUrl.localeCompare(b.finalUrl),
+        error:
+          "The website could not be crawled.",
+
+        crawlMeta: {
+          pagesAttempted,
+          pagesSuccessfullyCrawled,
+          startedAt,
+          completedAt:
+            new Date()
+              .toISOString(),
+        },
+      },
+      {
+        status: 200,
+        headers:
+          corsHeaders(
+            request,
+          ),
+      },
+    )
+  }
+
+  const serviceEvidence =
+    buildServiceEvidence(
+      pages,
+      validatedService,
     )
 
-  const orderedPages = [
-    homepage,
-    ...remainingPages,
-  ]
-
-  /*
-   * Build site-wide evidence.
-   */
-  const successfulPages =
-    orderedPages.filter(
-      (page) => page.fetchOk,
+  const locationEvidence =
+    buildLocationEvidence(
+      homepage,
+      pages,
+      validatedLocation,
     )
 
+  const contactEvidence =
+    buildContactEvidence(
+      pages,
+      validatedBusinessName,
+    )
+
+  const schemaEvidence =
+    buildSchemaEvidence(
+      pages,
+    )
+
+  const duplicateEvidence =
+    buildDuplicateEvidence(
+      pages,
+    )
+
+  const completedAt =
+    new Date().toISOString()
+
+  const crawlStatus =
+    pagesSuccessfullyCrawled ===
+    0
+      ? "unavailable"
+      : pages.some(
+            (p) =>
+              !p.fetchOk ||
+              p.error,
+          )
+        ? "partial"
+        : "success"
+
+  return NextResponse.json(
+    {
+      crawlStatus,
+
+      query: {
+        website:
+          startUrl,
+        businessName:
+          validatedBusinessName,
+        service:
+          validatedService,
+        location:
+          validatedLocation,
+      },
+
+      website: {
+        submittedUrl:
+          validatedWebsite,
+
+        finalUrl:
+          homepage.finalUrl,
+
+        rootHostname,
+
+        httpsActive:
+          homepage.httpsActive,
+
+        reachable:
+          homepage.fetchOk,
+      },
+
+      homepage:
+        toHomepageEvidence(
+          homepage,
+        ),
+
+      pages:
+        pages.map(
+          toPageEvidence,
+        ),
+
+      serviceEvidence,
+      locationEvidence,
+      contactEvidence,
+      schemaEvidence,
+      duplicateEvidence,
+
+      crawlMeta: {
+        pagesAttempted,
+        pagesSuccessfullyCrawled,
+        maxPages,
+        perPageTimeoutMs,
+        concurrency,
+        maxPagesCeiling:
+          MAX_PAGES,
+
+        renderedFallbackConfigured:
+          isNonEmptyString(
+            process.env
+              .FIRECRAWL_API_KEY,
+          ),
+
+        startedAt,
+        completedAt,
+      },
+    },
+    {
+      headers:
+        corsHeaders(
+          request,
+        ),
+    },
+  )
+}
+
+function failedPage(
+  url: string,
+  finalUrl: string,
+  status: number,
+  ok: boolean,
+  error: string,
+): PageAnalysis {
+  return {
+    url,
+    finalUrl,
+    status,
+
+    httpsActive:
+      finalUrl.startsWith(
+        "https://",
+      ),
+
+    fetchOk: ok,
+    pageType: "other",
+
+    title: null,
+    metaDescription: null,
+
+    h1: [],
+    h2: [],
+
+    canonical: null,
+    metaRobots: null,
+
+    indexable: false,
+    wordCount: 0,
+
+    serviceMentioned: false,
+    serviceMentionCount: 0,
+    serviceInTitle: false,
+    serviceInH1: false,
+
+    locationMentioned: false,
+    locationMentionCount: 0,
+    locationInTitle: false,
+    locationInH1: false,
+
+    businessNameMentioned: false,
+
+    phoneNumbers: [],
+    emailAddresses: [],
+    postalAddresses: [],
+
+    internalLinks: [],
+    externalLinks: [],
+
+    schemaTypes: [],
+
+    contentFingerprint: null,
+    shingles: [],
+
+    error,
+  }
+}
+
+function toHomepageEvidence(
+  p: PageAnalysis,
+) {
+  return {
+    finalUrl:
+      p.finalUrl,
+
+    status:
+      p.status,
+
+    httpsActive:
+      p.httpsActive,
+
+    title:
+      p.title,
+
+    metaDescription:
+      p.metaDescription,
+
+    h1:
+      p.h1,
+
+    canonical:
+      p.canonical,
+
+    metaRobots:
+      p.metaRobots,
+
+    indexable:
+      p.indexable,
+
+    businessNameMentioned:
+      p.businessNameMentioned,
+
+    serviceMentioned:
+      p.serviceMentioned,
+
+    serviceInTitle:
+      p.serviceInTitle,
+
+    serviceInH1:
+      p.serviceInH1,
+
+    locationMentioned:
+      p.locationMentioned,
+
+    locationInTitle:
+      p.locationInTitle,
+
+    locationInH1:
+      p.locationInH1,
+
+    phoneNumbers:
+      p.phoneNumbers,
+
+    emailAddresses:
+      p.emailAddresses,
+
+    postalAddresses:
+      p.postalAddresses,
+
+    schemaTypes:
+      p.schemaTypes,
+
+    internalLinkCount:
+      p.internalLinks.length,
+
+    externalLinks:
+      p.externalLinks,
+
+    wordCount:
+      p.wordCount,
+  }
+}
+
+function toPageEvidence(
+  p: PageAnalysis,
+) {
+  return {
+    url:
+      p.url,
+
+    finalUrl:
+      p.finalUrl,
+
+    status:
+      p.status,
+
+    fetchOk:
+      p.fetchOk,
+
+    pageType:
+      p.pageType,
+
+    title:
+      p.title,
+
+    metaDescription:
+      p.metaDescription,
+
+    h1:
+      p.h1,
+
+    canonical:
+      p.canonical,
+
+    metaRobots:
+      p.metaRobots,
+
+    indexable:
+      p.indexable,
+
+    wordCount:
+      p.wordCount,
+
+    serviceMentioned:
+      p.serviceMentioned,
+
+    serviceMentionCount:
+      p.serviceMentionCount,
+
+    serviceInTitle:
+      p.serviceInTitle,
+
+    serviceInH1:
+      p.serviceInH1,
+
+    locationMentioned:
+      p.locationMentioned,
+
+    locationMentionCount:
+      p.locationMentionCount,
+
+    locationInTitle:
+      p.locationInTitle,
+
+    locationInH1:
+      p.locationInH1,
+
+    internalLinkCount:
+      p.internalLinks.length,
+
+    schemaTypes:
+      p.schemaTypes,
+
+    contentFingerprint:
+      p.contentFingerprint,
+
+    ...(p.error
+      ? {
+          error:
+            p.error,
+        }
+      : {}),
+  }
+}
+
+function buildServiceEvidence(
+  pages: PageAnalysis[],
+  service: string,
+) {
   const servicePages =
-    successfulPages.filter(
-      (page) =>
-        page.serviceMentioned &&
-        page.pageType !== "homepage",
+    pages.filter(
+      (p) =>
+        p.pageType ===
+          "service" &&
+        p.fetchOk,
     )
 
-  const dedicatedServicePages =
+  const dedicated =
     servicePages.filter(
-      (page) =>
-        page.serviceInTitle ||
-        page.serviceInH1 ||
-        page.pageType === "service",
+      (p) =>
+        p.serviceInTitle ||
+        p.serviceInH1 ||
+        p.serviceMentionCount >=
+          3,
     )
 
+  const linkedUrls =
+    new Set<string>()
+
+  for (const p of pages) {
+    for (
+      const l
+      of p.internalLinks
+    ) {
+      linkedUrls.add(
+        l.url,
+      )
+    }
+  }
+
+  return {
+    submittedService:
+      service,
+
+    servicePageCount:
+      servicePages.length,
+
+    servicePageUrls:
+      servicePages.map(
+        (p) => p.finalUrl,
+      ),
+
+    dedicatedServicePageExists:
+      dedicated.length > 0,
+
+    dedicatedServicePageUrls:
+      dedicated.map(
+        (p) => p.finalUrl,
+      ),
+
+    serviceProminentPages:
+      pages
+        .filter(
+          (p) =>
+            p.fetchOk &&
+            (
+              p.serviceInTitle ||
+              p.serviceInH1
+            ),
+        )
+        .map(
+          (p) => ({
+            url:
+              p.finalUrl,
+
+            inTitle:
+              p.serviceInTitle,
+
+            inH1:
+              p.serviceInH1,
+          }),
+        ),
+
+    servicePagesInternallyLinked:
+      dedicated
+        .filter(
+          (p) =>
+            linkedUrls.has(
+              p.finalUrl,
+            ),
+        )
+        .map(
+          (p) =>
+            p.finalUrl,
+        ),
+  }
+}
+
+function buildLocationEvidence(
+  homepage: PageAnalysis,
+  pages: PageAnalysis[],
+  location: string,
+) {
   const locationPages =
-    successfulPages.filter(
-      (page) =>
-        page.locationMentioned &&
-        page.pageType !== "homepage",
+    pages.filter(
+      (p) =>
+        p.pageType ===
+          "location" &&
+        p.fetchOk,
     )
 
-  const locationInTitleOrH1Pages =
-    successfulPages.filter(
-      (page) =>
-        page.locationInTitle ||
-        page.locationInH1,
-    )
+  return {
+    submittedLocation:
+      location,
 
-  const serviceAndLocationPages =
-    successfulPages.filter(
-      (page) =>
-        page.serviceMentioned &&
-        page.locationMentioned,
-    )
+    locationOnHomepage:
+      homepage.locationMentioned,
 
-  const allPhoneNumbers = Array.from(
-    new Set(
-      successfulPages.flatMap(
-        (page) => page.phoneNumbers,
+    locationInHomepageTitle:
+      homepage.locationInTitle,
+
+    locationInHomepageH1:
+      homepage.locationInH1,
+
+    locationPageCount:
+      locationPages.length,
+
+    locationPageUrls:
+      locationPages.map(
+        (p) => p.finalUrl,
       ),
-    ),
-  )
 
-  const allEmailAddresses = Array.from(
-    new Set(
-      successfulPages.flatMap(
-        (page) => page.emailAddresses,
-      ),
-    ),
-  )
+    locationInTitleOrH1Pages:
+      pages
+        .filter(
+          (p) =>
+            p.fetchOk &&
+            (
+              p.locationInTitle ||
+              p.locationInH1
+            ),
+        )
+        .map(
+          (p) => ({
+            url:
+              p.finalUrl,
 
-  const allPostalAddresses = Array.from(
-    new Set(
-      successfulPages.flatMap(
-        (page) => page.postalAddresses,
-      ),
-    ),
-  )
+            inTitle:
+              p.locationInTitle,
 
-  const allSchemaTypes = Array.from(
-    new Set(
-      successfulPages.flatMap(
-        (page) => page.schemaTypes,
+            inH1:
+              p.locationInH1,
+          }),
+        ),
+
+    serviceAndLocationPages:
+      pages
+        .filter(
+          (p) =>
+            p.fetchOk &&
+            p.serviceMentioned &&
+            p.locationMentioned,
+        )
+        .map(
+          (p) => ({
+            url:
+              p.finalUrl,
+
+            serviceMentionCount:
+              p.serviceMentionCount,
+
+            locationMentionCount:
+              p.locationMentionCount,
+          }),
+        ),
+  }
+}
+
+function buildContactEvidence(
+  pages: PageAnalysis[],
+  businessName: string,
+) {
+  const phoneNumbers =
+    new Set<string>()
+
+  const emailAddresses =
+    new Set<string>()
+
+  const postalAddresses =
+    new Set<string>()
+
+  let businessNameFoundOnSite =
+    false
+
+  let contactPageUrl:
+    string | null = null
+
+  for (const p of pages) {
+    if (!p.fetchOk) {
+      continue
+    }
+
+    if (
+      p.businessNameMentioned
+    ) {
+      businessNameFoundOnSite =
+        true
+    }
+
+    for (
+      const phone
+      of p.phoneNumbers
+    ) {
+      phoneNumbers.add(
+        phone,
+      )
+    }
+
+    for (
+      const email
+      of p.emailAddresses
+    ) {
+      emailAddresses.add(
+        email,
+      )
+    }
+
+    for (
+      const address
+      of p.postalAddresses
+    ) {
+      postalAddresses.add(
+        address,
+      )
+    }
+
+    if (
+      !contactPageUrl &&
+      p.pageType ===
+        "contact"
+    ) {
+      contactPageUrl =
+        p.finalUrl
+    }
+  }
+
+  return {
+    businessName,
+
+    businessNameFoundOnSite,
+
+    phoneNumbers:
+      Array.from(
+        phoneNumbers,
       ),
-    ),
-  )
+
+    emailAddresses:
+      Array.from(
+        emailAddresses,
+      ),
+
+    postalAddresses:
+      Array.from(
+        postalAddresses,
+      ),
+
+    contactPageUrl,
+
+    distinctPhoneCount:
+      phoneNumbers.size,
+
+    distinctEmailCount:
+      emailAddresses.size,
+  }
+}
+
+function buildSchemaEvidence(
+  pages: PageAnalysis[],
+) {
+  const allTypes =
+    new Map<
+      string,
+      string
+    >()
+
+  let unparsableFound =
+    false
 
   const localBusinessTypes =
-    allSchemaTypes.filter((type) => {
-      const normalized =
-        type.toLowerCase()
+    new Set([
+      "localbusiness",
+      "professionalservice",
+      "homeandconstructionbusiness",
+      "electrician",
+      "plumber",
+      "roofingcontractor",
+      "hvacbusiness",
+      "locksmith",
+      "housepainter",
+      "generalcontractor",
+    ])
 
-      return (
-        normalized.includes("localbusiness") ||
-        normalized.includes("professionalservice") ||
-        normalized.includes("homeandconstructionbusiness") ||
-        normalized.includes("plumber") ||
-        normalized.includes("electrician") ||
-        normalized.includes("roofingcontractor") ||
-        normalized.includes("hvacbusiness")
-      )
-    })
+  for (const p of pages) {
+    if (!p.fetchOk) {
+      continue
+    }
 
-  const contactPage =
-    successfulPages.find((page) => {
-      try {
-        const pathname =
-          new URL(page.finalUrl)
-            .pathname
-            .toLowerCase()
-
-        return (
-          pathname.includes("/contact") ||
-          pathname.includes("/get-in-touch")
-        )
-      } catch {
-        return false
+    for (
+      const raw
+      of p.schemaTypes
+    ) {
+      if (
+        raw ===
+        "_unparsable_jsonld_"
+      ) {
+        unparsableFound =
+          true
+        continue
       }
-    }) ?? null
-    /*
-   * Work out which important service pages are linked internally.
-   */
-  const internallyLinkedUrls = new Set(
-    successfulPages.flatMap(
-      (page) =>
-        page.internalLinks
-          .map((link) =>
-            canonicalizeUrl(link.url),
-          )
-          .filter(
-            (url): url is string =>
-              typeof url === "string",
-          ),
-    ),
-  )
 
-  const servicePagesInternallyLinked =
-    dedicatedServicePages
-      .filter((page) => {
-        const canonical =
-          canonicalizeUrl(page.finalUrl)
+      const normalized =
+        raw
+          .trim()
+          .toLowerCase()
 
-        return (
-          canonical !== null &&
-          internallyLinkedUrls.has(canonical)
+      if (!normalized) {
+        continue
+      }
+
+      if (
+        !allTypes.has(
+          normalized,
         )
-      })
-      .map((page) => page.finalUrl)
+      ) {
+        allTypes.set(
+          normalized,
+          raw,
+        )
+      }
+    }
+  }
 
-  /*
-   * Duplicate-content analysis.
-   *
-   * Only compare successfully crawled pages that contain enough
-   * meaningful text to make the comparison useful.
-   */
-  const duplicateCandidates =
-    successfulPages.filter(
-      (page) =>
-        page.contentTokens.length >= 20,
+  const detectedLocalBusinessTypes =
+    Array.from(
+      allTypes.keys(),
+    )
+      .filter(
+        (type) =>
+          localBusinessTypes.has(
+            type,
+          ),
+      )
+      .map(
+        (type) =>
+          allTypes.get(
+            type,
+          ) as string,
+      )
+
+  return {
+    jsonLdOrMicrodataPresent:
+      allTypes.size > 0,
+
+    unparsableJsonLdFound:
+      unparsableFound,
+
+    localBusinessSchemaPresent:
+      detectedLocalBusinessTypes.length >
+      0,
+
+    detectedLocalBusinessTypes,
+
+    allDetectedTypes:
+      Array.from(
+        allTypes.values(),
+      ),
+  }
+}
+
+function buildDuplicateEvidence(
+  pages: PageAnalysis[],
+) {
+  const candidates =
+    pages.filter(
+      (p) =>
+        p.fetchOk &&
+        p.shingles.length >
+          0,
     )
 
-  const pairwiseSimilarities: Array<{
-    urlA: string
-    urlB: string
-    similarity: number
-  }> = []
+  const pairwiseSimilarities:
+    Array<{
+      urlA: string
+      urlB: string
+      similarity: number
+    }> = []
 
-  let highestSimilarity: number | null =
-    null
+  let highestSimilarity:
+    number | null = null
 
   for (
     let i = 0;
-    i < duplicateCandidates.length;
+    i <
+    candidates.length;
     i++
   ) {
     for (
       let j = i + 1;
-      j < duplicateCandidates.length;
+      j <
+      candidates.length;
       j++
     ) {
-      const a = duplicateCandidates[i]
-      const b = duplicateCandidates[j]
-
       const similarity =
         jaccardSimilarity(
-          a.contentTokens,
-          b.contentTokens,
+          candidates[i]
+            .shingles,
+
+          candidates[j]
+            .shingles,
         )
 
-      pairwiseSimilarities.push({
-        urlA: a.finalUrl,
-        urlB: b.finalUrl,
-        similarity:
-          Math.round(similarity * 1000) /
-          1000,
-      })
+      pairwiseSimilarities.push(
+        {
+          urlA:
+            candidates[i]
+              .finalUrl,
+
+          urlB:
+            candidates[j]
+              .finalUrl,
+
+          similarity,
+        },
+      )
 
       if (
-        highestSimilarity === null ||
-        similarity > highestSimilarity
+        highestSimilarity ===
+          null ||
+        similarity >
+          highestSimilarity
       ) {
-        highestSimilarity = similarity
+        highestSimilarity =
+          similarity
       }
     }
   }
 
   pairwiseSimilarities.sort(
     (a, b) =>
-      b.similarity - a.similarity,
+      b.similarity -
+      a.similarity,
   )
 
-  /*
-   * Exact duplicates use the deterministic content fingerprint
-   * generated by analyzePage().
-   */
   const fingerprintGroups =
-    new Map<string, string[]>()
+    new Map<
+      string,
+      string[]
+    >()
 
-  for (const page of successfulPages) {
-    if (!page.contentFingerprint) {
+  for (const p of candidates) {
+    if (
+      !p.contentFingerprint
+    ) {
       continue
     }
 
-    const existing =
+    const urls =
       fingerprintGroups.get(
-        page.contentFingerprint,
+        p.contentFingerprint,
       ) ?? []
 
-    existing.push(page.finalUrl)
+    urls.push(
+      p.finalUrl,
+    )
 
     fingerprintGroups.set(
-      page.contentFingerprint,
-      existing,
+      p.contentFingerprint,
+      urls,
     )
   }
 
@@ -857,433 +1503,36 @@ export async function POST(request: NextRequest) {
     Array.from(
       fingerprintGroups.values(),
     ).filter(
-      (urls) => urls.length > 1,
+      (group) =>
+        group.length > 1,
     )
 
-  const possibleDuplicate =
-    exactDuplicateGroups.length > 0 ||
-    (
-      highestSimilarity !== null &&
-      highestSimilarity >= 0.85
-    )
+  return {
+    comparedPageCount:
+      candidates.length,
 
-  /*
-   * Homepage evidence.
-   */
-  const homepageEvidence = {
-    finalUrl:
-      homepage.finalUrl ||
-      homepageFinalUrl,
-
-    status:
-      homepage.status,
-
-    httpsActive:
+    possibleDuplicate:
+      exactDuplicateGroups.length >
+        0 ||
       (
-        homepage.finalUrl ||
-        homepageFinalUrl
-      )
-        .toLowerCase()
-        .startsWith("https://"),
+        highestSimilarity !==
+          null &&
+        highestSimilarity >=
+          0.85
+      ),
 
-    title:
-      homepage.title,
+    highestSimilarity,
 
-    metaDescription:
-      homepage.metaDescription,
+    pairwiseSimilarities:
+      pairwiseSimilarities.slice(
+        0,
+        20,
+      ),
 
-    h1:
-      homepage.h1,
-
-    canonical:
-      homepage.canonical,
-
-    metaRobots:
-      homepage.metaRobots,
-
-    indexable:
-      homepage.indexable,
-
-    businessNameMentioned:
-      homepage.businessNameMentioned,
-
-    serviceMentioned:
-      homepage.serviceMentioned,
-
-    serviceInTitle:
-      homepage.serviceInTitle,
-
-    serviceInH1:
-      homepage.serviceInH1,
-
-    locationMentioned:
-      homepage.locationMentioned,
-
-    locationInTitle:
-      homepage.locationInTitle,
-
-    locationInH1:
-      homepage.locationInH1,
-
-    phoneNumbers:
-      homepage.phoneNumbers,
-
-    emailAddresses:
-      homepage.emailAddresses,
-
-    postalAddresses:
-      homepage.postalAddresses,
-
-    schemaTypes:
-      homepage.schemaTypes,
-
-    internalLinkCount:
-      homepage.internalLinks.length,
-
-    externalLinks:
-      homepage.externalLinks,
-
-    wordCount:
-      homepage.wordCount,
+    exactDuplicateGroups,
   }
-
-  /*
-   * Compact page representation returned to the frontend.
-   *
-   * visibleText and contentTokens are deliberately excluded from the
-   * public response because they can be large and are only required
-   * internally for deterministic analysis.
-   */
-  const publicPages =
-    orderedPages.map((page) => ({
-      url:
-        page.requestedUrl,
-
-      finalUrl:
-        page.finalUrl,
-
-      status:
-        page.status,
-
-      fetchOk:
-        page.fetchOk,
-
-      pageType:
-        page.pageType,
-
-      title:
-        page.title,
-
-      metaDescription:
-        page.metaDescription,
-
-      h1:
-        page.h1,
-
-      canonical:
-        page.canonical,
-
-      metaRobots:
-        page.metaRobots,
-
-      indexable:
-        page.indexable,
-
-      wordCount:
-        page.wordCount,
-
-      serviceMentioned:
-        page.serviceMentioned,
-
-      serviceMentionCount:
-        page.serviceMentionCount,
-
-      serviceInTitle:
-        page.serviceInTitle,
-
-      serviceInH1:
-        page.serviceInH1,
-
-      locationMentioned:
-        page.locationMentioned,
-
-      locationMentionCount:
-        page.locationMentionCount,
-
-      locationInTitle:
-        page.locationInTitle,
-
-      locationInH1:
-        page.locationInH1,
-
-      internalLinkCount:
-        page.internalLinks.length,
-
-      schemaTypes:
-        page.schemaTypes,
-
-      contentFingerprint:
-        page.contentFingerprint,
-    }))
-
-  /*
-   * Determine whether the submitted business name was found anywhere
-   * on the site.
-   */
-  const businessNameFoundOnSite =
-    successfulPages.some(
-      (page) =>
-        page.businessNameMentioned,
-    )
-
-  /*
-   * A service page is considered prominent when the submitted service
-   * appears in its title or H1.
-   */
-  const serviceProminentPages =
-    successfulPages
-      .filter(
-        (page) =>
-          page.serviceInTitle ||
-          page.serviceInH1,
-      )
-      .map((page) => ({
-        url: page.finalUrl,
-        inTitle:
-          page.serviceInTitle,
-        inH1:
-          page.serviceInH1,
-      }))
-
-  const locationTitleOrH1Evidence =
-    locationInTitleOrH1Pages.map(
-      (page) => ({
-        url: page.finalUrl,
-        inTitle:
-          page.locationInTitle,
-        inH1:
-          page.locationInH1,
-      }),
-    )
-
-  const serviceLocationEvidence =
-    serviceAndLocationPages.map(
-      (page) => ({
-        url: page.finalUrl,
-        serviceMentionCount:
-          page.serviceMentionCount,
-        locationMentionCount:
-          page.locationMentionCount,
-      }),
-    )
-
-  /*
-   * Whether any JSON-LD or microdata evidence was found.
-   */
-  const schemaPresent =
-    allSchemaTypes.length > 0
-
-  const unparsableJsonLdFound =
-    successfulPages.some(
-      (page) =>
-        page.unparsableJsonLdFound,
-    )
-
-  /*
-   * Build the final deterministic response.
-   */
-  const completedAt =
-    new Date().toISOString()
-
-  const responseBody = {
-    crawlStatus: "success",
-
-    query: {
-      website: validatedWebsite,
-      businessName:
-        validatedBusinessName,
-      service:
-        validatedService,
-      location:
-        validatedLocation,
-    },
-
-    website: {
-      submittedUrl:
-        validatedWebsite,
-
-      finalUrl:
-        homepage.finalUrl ||
-        homepageFinalUrl,
-
-      rootHostname,
-
-      httpsActive:
-        (
-          homepage.finalUrl ||
-          homepageFinalUrl
-        )
-          .toLowerCase()
-          .startsWith("https://"),
-
-      reachable:
-        homepage.fetchOk,
-    },
-
-    homepage:
-      homepageEvidence,
-
-    pages:
-      publicPages,
-
-    serviceEvidence: {
-      submittedService:
-        validatedService,
-
-      servicePageCount:
-        servicePages.length,
-
-      servicePageUrls:
-        servicePages.map(
-          (page) => page.finalUrl,
-        ),
-
-      dedicatedServicePageExists:
-        dedicatedServicePages.length > 0,
-
-      dedicatedServicePageUrls:
-        dedicatedServicePages.map(
-          (page) => page.finalUrl,
-        ),
-
-      serviceProminentPages,
-
-      servicePagesInternallyLinked,},
-          locationEvidence: {
-      submittedLocation:
-        validatedLocation, 
-
-      locationOnHomepage:
-        homepage.locationMentioned,
-
-      locationInHomepageTitle:
-        homepage.locationInTitle,
-
-      locationInHomepageH1:
-        homepage.locationInH1,
-
-      locationPageCount:
-        locationPages.length,
-
-      locationPageUrls:
-        locationPages.map(
-          (page) => page.finalUrl,
-        ),
-
-      locationInTitleOrH1Pages:
-        locationTitleOrH1Evidence,
-
-      serviceAndLocationPages:
-        serviceLocationEvidence,
-    },
-
-    contactEvidence: {
-      businessName:
-        validatedBusinessName,
-
-      businessNameFoundOnSite,
-
-      phoneNumbers:
-        allPhoneNumbers.slice(0, 15),
-
-      emailAddresses:
-        allEmailAddresses.slice(0, 15),
-
-      postalAddresses:
-        allPostalAddresses.slice(0, 15),
-
-      contactPageUrl:
-        contactPage
-          ? contactPage.finalUrl
-          : null,
-
-      distinctPhoneCount:
-        allPhoneNumbers.length,
-
-      distinctEmailCount:
-        allEmailAddresses.length,
-    },
-
-    schemaEvidence: {
-      jsonLdOrMicrodataPresent:
-        schemaPresent,
-
-      unparsableJsonLdFound,
-
-      localBusinessSchemaPresent:
-        localBusinessTypes.length > 0,
-
-      detectedLocalBusinessTypes:
-        localBusinessTypes,
-
-      allDetectedTypes:
-        allSchemaTypes,
-    },
-
-    duplicateEvidence: {
-      comparedPageCount:
-        duplicateCandidates.length,
-
-      possibleDuplicate,
-
-      highestSimilarity:
-        highestSimilarity === null
-          ? null
-          : Math.round(
-              highestSimilarity * 1000,
-            ) / 1000,
-
-      pairwiseSimilarities:
-        pairwiseSimilarities.slice(
-          0,
-          20,
-        ),
-
-      exactDuplicateGroups,
-    },
-
-    crawlMeta: {
-      pagesAttempted,
-      pagesSuccessfullyCrawled,
-
-      maxPages,
-      perPageTimeoutMs,
-      concurrency,
-
-      maxPagesCeiling:
-        MAX_PAGES,
-
-      renderedFallbackConfigured:
-        isNonEmptyString(
-          process.env.FIRECRAWL_API_KEY,
-        ),
-
-      startedAt,
-      completedAt,
-    },
-  };
-  return NextResponse.json(
-    responseBody,
-    {
-      headers:
-        corsHeaders(request),
-    },
-  )
 }
 
-/*
- * Reject unsupported methods explicitly.
- */
 function methodNotAllowed(
   request: NextRequest,
 ) {
@@ -1295,8 +1544,11 @@ function methodNotAllowed(
     {
       status: 405,
       headers: {
-        ...corsHeaders(request),
-        Allow: "POST, OPTIONS",
+        ...corsHeaders(
+          request,
+        ),
+        Allow:
+          "POST, OPTIONS",
       },
     },
   )
@@ -1315,5 +1567,4 @@ export const DELETE =
   methodNotAllowed
 
 export const HEAD =
-  methodNotAllowed;
-    
+  methodNotAllowed
