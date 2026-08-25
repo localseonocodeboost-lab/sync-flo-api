@@ -148,7 +148,7 @@ async function fetchRenderedHtml(
       {
         method: "POST",
         headers: {
-          Authorization: Bearer ${apiKey},
+          Authorization: 'Bearer ${apiKey}',
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
