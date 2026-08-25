@@ -291,7 +291,7 @@ export async function POST(
   if (missing.length > 0) {
     return jsonError(
       request,
-      Missing or invalid required field(s): ${missing.join(", ")}.,
+      'Missing or invalid required field(s): ${missing.join(", ")}.',
       400,
     )
   }
