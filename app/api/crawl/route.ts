@@ -55,24 +55,36 @@ type RenderedFetchResult = {
   status: number
 }
 
-function isNonEmptyString(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0
-}
-
 function normalizeWebsiteInput(value: unknown): string | null {
-  if (!isNonEmptyString(value)) return null
+  if (!isNonEmptyString(value)) return null;
 
-  let normalized = value.trim()
+  let normalized = value.trim();
 
-  // Handles accidental escaped domains such as:
-  // www\.syncflo\.co\.uk
-  normalized = normalized.replace(/\\/g, "")
+  // Remove accidental escaping
+  normalized = normalized.replace(/\\/g, "");
 
+  // Add protocol if missing
   if (!/^https?:\/\//i.test(normalized)) {
-    normalized = 'https://${normalized}'
+    normalized = 'https://${normalized};'
   }
 
-  return normalized
+  try {
+    const url = new URL(normalized);
+
+    // Prefer apex domain rather than www.
+    if (url.hostname.toLowerCase().startsWith("www.")) {
+      url.hostname = url.hostname.slice(4);
+    }
+
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return null;
+  }
+}
+
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0
 }
 
 function clampInt(
