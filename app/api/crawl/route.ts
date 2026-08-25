@@ -69,7 +69,7 @@ function normalizeWebsiteInput(value: unknown): string | null {
   normalized = normalized.replace(/\\/g, "")
 
   if (!/^https?:\/\//i.test(normalized)) {
-    normalized = https://${normalized}
+    normalized = 'https://${normalized}'
   }
 
   return normalized
