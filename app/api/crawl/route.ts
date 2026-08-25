@@ -1315,5 +1315,5 @@ export const DELETE =
   methodNotAllowed
 
 export const HEAD =
-  methodNotAllowed
-    },
+  methodNotAllowed;
+    
