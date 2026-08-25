@@ -65,7 +65,7 @@ function normalizeWebsiteInput(value: unknown): string | null {
 
   // Add protocol if missing
   if (!/^https?:\/\//i.test(normalized)) {
-    normalized = 'https://${normalized};'
+    normalized = 'https://${normalized}'
   }
 
   try {
