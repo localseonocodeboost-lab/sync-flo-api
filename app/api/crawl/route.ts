@@ -229,7 +229,7 @@ const renderedLinks =
 const linkHtml = renderedLinks
   .map(
     (link) =>
-      <a href="${link.replace(/"/g, "&quot;")}"></a>,
+      `<a href="${link.replace(/"/g, "&quot;")}"></a>`,
   )
   .join("")
 
