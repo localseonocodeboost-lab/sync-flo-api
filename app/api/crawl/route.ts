@@ -235,7 +235,6 @@ const linkHtml = renderedLinks
 
 const html = `${baseHtml}${linkHtml}`
 
-const metadata = payload.data?.metadata
     const metadata = payload.data?.metadata
 
     const finalUrl =
