@@ -30,7 +30,7 @@ const MIN_CONCURRENCY = 1
 const MAX_CONCURRENCY = 3
 
 const FIRECRAWL_SCRAPE_URL = "https://api.firecrawl.dev/v2/scrape"
-const FIRECRAWL_WAIT_MS = 1_000
+const FIRECRAWL_WAIT_MS = 4_000
 const FIRECRAWL_TIMEOUT_MS = 12_000
 
 type CrawlRequestBody = {
@@ -165,7 +165,7 @@ async function fetchRenderedHtml(
         },
         body: JSON.stringify({
           url,
-          formats: ["html"],
+          formats: ["html", "links"],
           onlyMainContent: false,
           waitFor: FIRECRAWL_WAIT_MS,
           timeout: FIRECRAWL_TIMEOUT_MS,
@@ -199,6 +199,7 @@ async function fetchRenderedHtml(
       success?: boolean
       data?: {
         html?: unknown
+        links?: unknown
         metadata?: {
           url?: unknown
           sourceURL?: unknown
@@ -207,15 +208,34 @@ async function fetchRenderedHtml(
       }
     }
 
-    const html =
-      typeof payload?.data?.html === "string"
-        ? payload.data.html
-        : null
+    const baseHtml =
+  typeof payload?.data?.html === "string"
+    ? payload.data.html
+    : null
 
-    if (!payload.success || !html) {
-      return null
-    }
+if (!payload.success || !baseHtml) {
+  return null
+}
 
+const renderedLinks =
+  Array.isArray(payload?.data?.links)
+    ? payload.data.links.filter(
+        (link): link is string =>
+          typeof link === "string" &&
+          /^https?:\/\//i.test(link),
+      )
+    : []
+
+const linkHtml = renderedLinks
+  .map(
+    (link) =>
+      <a href="${link.replace(/"/g, "&quot;")}"></a>,
+  )
+  .join("")
+
+const html = `${baseHtml}${linkHtml}`
+
+const metadata = payload.data?.metadata
     const metadata = payload.data?.metadata
 
     const finalUrl =
